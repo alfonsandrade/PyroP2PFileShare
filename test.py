@@ -1,9 +1,10 @@
 import threading
 import time
+import serpent
 from Pyro5.api import locate_ns, Proxy
 import ultimatePeer
 
-peer_names = [f"peer{i}" for i in range(1, 6)]
+peer_names = [f"peer.{i}" for i in range(1, 6)]
 ports = list(range(50000, 50000 + len(peer_names)))
 uris = {}
 
@@ -28,7 +29,7 @@ if not trackers:
 epoch = max(trackers, key=lambda k: int(k.rsplit("_",1)[1]))
 track = Proxy(trackers[epoch])
 
-p1 = Proxy(uris["peer1"])
+p1 = Proxy(uris["peer.1"])
 fn = p1.create_test_file("hello")
 print("Created", fn, "on peer1")
 
@@ -38,12 +39,11 @@ if not owners:
     print("No owner for", fn)
     exit(1)
 
-peer = Proxy(owners[0])
-data = peer.file_transfer(fn)
+proxy = Proxy(owners[0])
+data = proxy.file_transfer(fn)
 
-if isinstance(data, str):
-    data = data.encode()  # força reconversão para bytes
-
+if isinstance(data, dict):
+    data = serpent.tobytes(data)
 if not isinstance(data, (bytes, bytearray)):
     raise TypeError(f"Expected bytes, got {type(data)}")
 
