@@ -1,43 +1,53 @@
-import threading, time, os
-import Pyro5.api
+import threading
+import time
+from Pyro5.api import locate_ns, Proxy
 import ultimatePeer
 
-def run_peer(name, port, out):
-    daemon, uri = ultimatePeer.start(name, "localhost", port)
-    out[name] = uri
+peer_names = [f"peer{i}" for i in range(1, 6)]
+ports = list(range(50000, 50000 + len(peer_names)))
+uris = {}
+
+def runner(name, port):
+    daemon, uri = ultimatePeer.start(name, "localhost", port, peer_names)
+    uris[name] = uri
     daemon.requestLoop()
 
-if __name__ == "__main__":
-    uris = {}
+for n, p in zip(peer_names, ports):
+    threading.Thread(target=runner, args=(n, p), daemon=True).start()
+    time.sleep(0.1)
 
-    t1 = threading.Thread(target=run_peer, args=("peer1", 50000, uris), daemon=True)
-    t2 = threading.Thread(target=run_peer, args=("peer2", 50001, uris), daemon=True)
-    t1.start(); t2.start()
-    time.sleep(1)
+while len(uris) < len(peer_names):
+    time.sleep(0.05)
 
-    p1 = Pyro5.api.Proxy(uris["peer1"])
-    p2 = Pyro5.api.Proxy(uris["peer2"])
+ns = locate_ns("localhost", 9090)
+trackers = ns.list(prefix="Tracker_Epoca_")
+print("Trackers:", trackers)
+if not trackers:
+    print("No tracker elected")
+    exit(1)
+epoch = max(trackers, key=lambda k: int(k.rsplit("_",1)[1]))
+track = Proxy(trackers[epoch])
 
-    print(p1.ping("hello"))
-    print(p2.ping("world"))
+p1 = Proxy(uris["peer1"])
+fn = p1.create_test_file("hello")
+print("Created", fn, "on peer1")
 
-    file1 = p1.create_test_file("This is a test file for peer1.")
-    file2 = p2.create_test_file("This is a test file for peer2.")
+owners = track.query(fn)
+print("Owners of", fn, ":", owners)
+if not owners:
+    print("No owner for", fn)
+    exit(1)
 
-    print("Transferring file from peer1 to peer2...")
-    file_data = p1.file_transfer(file1)
-    with open("received_from_peer1.txt", "wb") as received_file:
-        received_file.write(file_data)
-    print("File received from peer1 and saved as 'received_from_peer1.txt'.")
+peer = Proxy(owners[0])
+data = peer.file_transfer(fn)
 
-    print("Transferring file from peer2 to peer1...")
-    file_data = p2.file_transfer(file2)
-    with open("received_from_peer2.txt", "wb") as received_file:
-        received_file.write(file_data)
-    print("File received from peer2 and saved as 'received_from_peer2.txt'.")
-    
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
+if isinstance(data, str):
+    data = data.encode()  # força reconversão para bytes
+
+if not isinstance(data, (bytes, bytearray)):
+    raise TypeError(f"Expected bytes, got {type(data)}")
+
+with open("received_" + fn, "wb") as f:
+    f.write(data)
+
+print("Received and saved as", f"received_{fn}")
