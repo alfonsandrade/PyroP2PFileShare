@@ -140,7 +140,7 @@ class Peer:
             time.sleep(0.05)
         while True:
             if not self.is_tracker:
-                interval = random.uniform(0.15, 0.3)
+                interval = random.uniform(0.15, 0.5)
                 if time.time() - self.heartbeat_ts > interval:
                     logging.info(f"{self.name} missing heartbeat → election")
                     self.start_election()
