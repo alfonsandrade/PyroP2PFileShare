@@ -7,6 +7,7 @@ import ultimatePeer
 peer_names = [f"{i}" for i in range(1, 6)]
 ports = list(range(50000, 50000 + len(peer_names)))
 uris = {}
+threads = {}
 
 def runner(name, port):
     daemon, uri = ultimatePeer.start(name, "localhost", port, peer_names)
@@ -14,7 +15,8 @@ def runner(name, port):
     daemon.requestLoop()
 
 for n, p in zip(peer_names, ports):
-    threading.Thread(target=runner, args=(n, p), daemon=True).start()
+    threads[n] = threading.Thread(target=runner, args=(n, p), daemon=True)
+    threads[n].start()
     time.sleep(0.1)
 
 while len(uris) < len(peer_names):
@@ -94,10 +96,12 @@ while True:
         elif op == "4":
             print(f"Desconectando peer.{peer_id}...")
             # encerramento bruto, sem daemon.shutdown() pois daemon roda em thread
-            del uris[peer_id]
-            if peer_proxy.is_tracker:
+            if peer_proxy.get_is_tracker():
                 print("Era o tracker, aguardando nova eleição...")
                 time.sleep(1.0)
+            del uris[peer_id]
+            threads[peer_id].join(timeout=1.0)
+
             break
 
         else:

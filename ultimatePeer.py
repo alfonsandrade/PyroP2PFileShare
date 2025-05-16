@@ -140,7 +140,7 @@ class Peer:
             time.sleep(0.05)
         while True:
             if not self.is_tracker:
-                interval = random.uniform(0.15, 0.5)
+                interval = random.uniform(0.25, 0.5)
                 if time.time() - self.heartbeat_ts > interval:
                     logging.info(f"{self.name} missing heartbeat → election")
                     self.start_election()
@@ -171,6 +171,9 @@ class Peer:
                 except:
                     pass
             time.sleep(0.1)
+
+    def get_is_tracker(self):
+        return self.is_tracker
 
 def start(name, host, port, peer_names, ns_host="localhost", ns_port=9090):
     daemon = Daemon(host=host, port=port)
