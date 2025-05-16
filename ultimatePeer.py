@@ -36,24 +36,6 @@ class Peer:
     def get_file_list(self):
         return list(self.files)
 
-    def create_test_file(self, content):
-        fn = f"{self.name}_test_{int(time.time())}.txt"
-        path = os.path.join(self.dir, fn)
-        with open(path, "w") as f:
-            f.write(content)
-        logging.info(f"{self.name} created file: {fn}")
-        self.files.append(fn)
-        self.files.sort()
-        if self.is_tracker:
-            self.index[self.name] = list(self.files)
-        else:
-            try:
-                tracker = self._get_tracker_proxy()
-                tracker.update_files(self.name, list(self.files))
-            except:
-                pass
-        return fn
-
     def file_transfer(self, file_name):
         path = os.path.join(self.dir, file_name)
         with open(path, "rb") as f:
@@ -174,6 +156,11 @@ class Peer:
 
     def get_is_tracker(self):
         return self.is_tracker
+    
+    def get_index(self, peer_name):
+        if not self.is_tracker:
+            raise RuntimeError("not a tracker")
+        return self.index.get(peer_name, [])
 
 def start(name, host, port, peer_names, ns_host="localhost", ns_port=9090):
     daemon = Daemon(host=host, port=port)
