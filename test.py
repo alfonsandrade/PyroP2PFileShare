@@ -6,7 +6,7 @@ import sys
 from Pyro5.api import locate_ns, Proxy
 import ultimatePeer
 
-peer_names = [f"{i}" for i in range(1, 3)]
+peer_names = [f"{i}" for i in range(1, 6)]
 
 peer_name = sys.argv[1]
 port = 50000 + int(peer_name)
@@ -48,10 +48,11 @@ while True:
             continue
         print("\nArquivos indexados no tracker:")
         for pid in peer_names:
-            print(f"peer.{pid}: ", end="")
             try:
                 files = tracker_proxy.get_index(pid)
-                print(", ".join(files))
+                if files:
+                    print(f"peer.{pid}: ", end="")
+                    print(", ".join(files))
             except:
                 print("(indisponível)")
 
@@ -70,9 +71,11 @@ while True:
             data = serpent.tobytes(data)
         if not isinstance(data, (bytes, bytearray)):
             raise TypeError(f"Esperado bytes, recebido {type(data)}")
-        with open("received_" + fname, "wb") as f:
+        if not os.path.exists(peer_name + "received"):
+            os.makedirs(peer_name + "received")
+        with open(peer_name + "received/" + fname, "wb") as f:
             f.write(data)
-        print(f"Arquivo {fname} salvo como received_{fname}")
+        print(f"Arquivo {fname} salvo em {peer_name}received/{fname}")
 
     elif op == "3":
         files = peer_proxy.get_file_list()

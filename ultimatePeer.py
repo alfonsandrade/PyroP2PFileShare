@@ -22,11 +22,12 @@ class Peer:
         self.dir = os.path.join(os.getcwd(), name)
         os.makedirs(self.dir, exist_ok=True)
         for i in range(random.randint(1, 5)):
-            fn = f"test_{i}.txt"
+            fn = f"peer{name}_test_{i}.txt"
             with open(os.path.join(self.dir, fn), "w") as f:
                 f.write(f"dummy from {name} file {i}")
         self.files = sorted(os.listdir(self.dir))
         self.heartbeat_ts = time.time()
+        self.interval_for_elect = random.uniform(0.25, 0.5)
         threading.Thread(target=self._monitor_files, daemon=True).start()
         threading.Thread(target=self._monitor, daemon=True).start()
 
@@ -122,8 +123,7 @@ class Peer:
             time.sleep(0.05)
         while True:
             if not self.is_tracker:
-                interval = random.uniform(0.25, 0.5)
-                if time.time() - self.heartbeat_ts > interval:
+                if time.time() - self.heartbeat_ts > self.interval_for_elect:
                     logging.info(f"{self.name} missing heartbeat → election")
                     self.start_election()
             time.sleep(0.1)
