@@ -47,6 +47,6 @@ if __name__ == "__main__":
     run_script_in_new_terminal("./test.py 1")
     run_script_in_new_terminal("./test.py 2")
     run_script_in_new_terminal("./test.py 3")
-    # run_script_in_new_terminal("./test.py 4")
+    run_script_in_new_terminal("./test.py 4")
     # run_script_in_new_terminal("./test.py 5")
     run_script_in_current_terminal("./nameServer.py")

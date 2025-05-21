@@ -3,9 +3,11 @@ import threading
 import time
 import random
 import logging
+import Pyro5
 from Pyro5.api import expose, Daemon, Proxy, locate_ns
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(levelname)s %(message)s")
+Pyro5.config.COMMTIMEOUT=0.1
 
 @expose
 class Peer:
@@ -27,9 +29,10 @@ class Peer:
                 f.write(f"dummy from {name} file {i}")
         self.files = sorted(os.listdir(self.dir))
         self.heartbeat_ts = time.time()
-        self.interval_for_elect = random.uniform(1.0, 2.0)
+        self.interval_for_elect = random.uniform(0.5, 0.8)
         threading.Thread(target=self._monitor_files, daemon=True).start()
         threading.Thread(target=self._monitor, daemon=True).start()
+        self.heartbeatCounter = 0
 
     def ping(self, msg):
         return f"{self.name} got: {msg}"
@@ -45,7 +48,7 @@ class Peer:
     def request_vote(self, candidate, epoch):
         self.heartbeat_ts = time.time()
         with self.vote_lock:
-            if epoch > self.epoch and epoch not in self.voted_epochs and not self.is_tracker:
+            if epoch > self.epoch and epoch not in self.voted_epochs:
                 self.voted_epochs.add(epoch)
                 self.epoch = epoch
                 logging.info(f"({str(time.time())}) {self.name} votes for {candidate} in epoch {epoch}")
@@ -62,9 +65,12 @@ class Peer:
         ns.register(f"Tracker_Epoca_{epoch}", uri)
         logging.info(f"({str(time.time())}) {self.name} elected as tracker, epoch={epoch}")
         for peer in self.peer_names:
+            if peer == self.name:
+                continue
             try:
                 p = Proxy(ns.lookup(f"peer.{peer}"))
                 p.heartbeat(epoch)
+                p.set_not_tracker()
                 self.index[peer] = p.get_file_list()
             except:
                 pass
@@ -94,7 +100,10 @@ class Peer:
     def heartbeat(self, epoch):
         if epoch == self.epoch:
             self.heartbeat_ts = time.time()
-            # logging.info(f"({str(time.time())}) {self.name} Received heartbeat")
+            self.heartbeatCounter += 1
+            if self.heartbeatCounter > 20:
+                # logging.info(f"({str(time.time())}) {self.name} heartbeat counter exceeded in epoch {epoch}")
+                self.heartbeatCounter = 0
         return True
 
     def _get_tracker_proxy(self):
@@ -134,17 +143,20 @@ class Peer:
             time.sleep(0.1)
 
     def start_election(self):
-        votes = 0
+        votes = 1
         totalPeersOnline = 0
         ns = locate_ns(self.ns_host, self.ns_port)
         for peer in self.peer_names:
-            # if peer == self.name:
-            #     continue
+            if peer == self.name:
+                totalPeersOnline += 1
+                continue
             try:
                 p = Proxy(ns.lookup(f"peer.{peer}"))
-                totalPeersOnline += 1
                 if p.request_vote(self.name, self.epoch + 1):
                     votes += 1
+
+                logging.info(f"({str(time.time())}) {self.name} missing heartbeat → election request to {peer}")
+                totalPeersOnline += 1
             except:
                 pass
 
@@ -170,6 +182,10 @@ class Peer:
         if not self.is_tracker:
             raise RuntimeError("not a tracker")
         return self.index.get(peer_name, [])
+    
+    def set_not_tracker(self):
+        self.is_tracker = False
+        self.index = {}
 
 def start(name, host, port, peer_names, ns_host="localhost", ns_port=9090):
     daemon = Daemon(host=host, port=port)

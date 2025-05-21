@@ -6,7 +6,7 @@ import sys
 from Pyro5.api import locate_ns, Proxy
 import ultimatePeer
 
-peer_names = [f"{i}" for i in range(1, 4)]
+peer_names = [f"{i}" for i in range(1, 5)]
 
 peer_name = sys.argv[1]
 port = 50000 + int(peer_name)
@@ -86,6 +86,7 @@ while True:
         # encerramento bruto, sem daemon.shutdown() pois daemon roda em thread
         if peer_proxy.get_is_tracker():
             print("Era o tracker, aguardando nova eleição...")
+            peer_proxy.set_not_tracker()
             time.sleep(1.0)
         thread.join(timeout=1.0)
 
