@@ -6,7 +6,7 @@ import logging
 import Pyro5
 from Pyro5.api import expose, Daemon, Proxy, locate_ns
 
-logging.basicConfig(level=logging.ERROR, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 Pyro5.config.COMMTIMEOUT=0.1
 
 @expose
@@ -29,7 +29,7 @@ class Peer:
                 f.write(f"dummy from {name} file {i}")
         self.files = sorted(os.listdir(self.dir))
         self.heartbeat_ts = time.time()
-        self.interval_for_elect = random.uniform(0.5, 0.8)
+        self.interval_for_elect = random.uniform(2, 5)
         threading.Thread(target=self._monitor_files, daemon=True).start()
         threading.Thread(target=self._monitor, daemon=True).start()
         self.heartbeatCounter = 0
@@ -50,11 +50,10 @@ class Peer:
         with self.vote_lock:
             if epoch > self.epoch and epoch not in self.voted_epochs:
                 self.voted_epochs.add(epoch)
-                self.epoch = epoch
                 logging.info(f"({str(time.time())}) {self.name} votes for {candidate} in epoch {epoch}")
                 return True
             else:
-                logging.info(f"({str(time.time())}) {self.name} is_tracker ({self.is_tracker}) rejects vote for {candidate} in epoch {epoch}. current epoch {self.epoch}. voted epochs {self.voted_epochs}")
+                logging.debug(f"({str(time.time())}) {self.name} is_tracker ({self.is_tracker}) rejects vote for {candidate} in epoch {epoch}. current epoch {self.epoch}. voted epochs {self.voted_epochs}")
         return False
 
     def declare_winner(self, epoch):
@@ -64,16 +63,6 @@ class Peer:
         uri = self._daemon.uriFor(self)
         ns.register(f"Tracker_Epoca_{epoch}", uri)
         logging.info(f"({str(time.time())}) {self.name} elected as tracker, epoch={epoch}")
-        for peer in self.peer_names:
-            if peer == self.name:
-                continue
-            try:
-                p = Proxy(ns.lookup(f"peer.{peer}"))
-                p.heartbeat(epoch)
-                p.set_not_tracker()
-                self.index[peer] = p.get_file_list()
-            except:
-                pass
         threading.Thread(target=self._send_heartbeat, daemon=True).start()
         return True
 
@@ -81,7 +70,7 @@ class Peer:
         if not self.is_tracker:
             raise RuntimeError("not a tracker")
         self.index[peer_name] = list(files)
-        logging.info(f"tracker updated files of {peer_name}: {files}")
+        logging.debug(f"tracker updated files of {peer_name}: {files}")
         return True
 
     def query(self, filename):
@@ -98,12 +87,17 @@ class Peer:
         return results
 
     def heartbeat(self, epoch):
-        if epoch == self.epoch:
-            self.heartbeat_ts = time.time()
-            self.heartbeatCounter += 1
-            if self.heartbeatCounter > 20:
-                # logging.info(f"({str(time.time())}) {self.name} heartbeat counter exceeded in epoch {epoch}")
-                self.heartbeatCounter = 0
+        self.heartbeat_ts = time.time()
+        self.heartbeatCounter += 1
+        if self.heartbeatCounter > 20:
+            # logging.debug(f"({str(time.time())}) {self.name} heartbeat counter exceeded in epoch {epoch}")
+            self.heartbeatCounter = 0
+
+        if epoch > self.epoch:
+            self.epoch = epoch
+            self.set_not_tracker()
+            self._get_tracker_proxy().update_files(self.name, list(self.files))
+
         return True
 
     def _get_tracker_proxy(self):
@@ -121,7 +115,7 @@ class Peer:
             current = set(os.listdir(self.dir))
             if current != prev:
                 self.files = sorted(current)
-                logging.info(f"{self.name} dir change: {self.files}")
+                logging.debug(f"{self.name} dir change: {self.files}")
                 try:
                     if self.is_tracker:
                         self.index[self.name] = list(self.files)
@@ -144,6 +138,7 @@ class Peer:
 
     def start_election(self):
         votes = 1
+        self.voted_epochs.add(self.epoch + 1)
         totalPeersOnline = 0
         ns = locate_ns(self.ns_host, self.ns_port)
         for peer in self.peer_names:
@@ -155,15 +150,14 @@ class Peer:
                 if p.request_vote(self.name, self.epoch + 1):
                     votes += 1
 
-                logging.info(f"({str(time.time())}) {self.name} missing heartbeat → election request to {peer}")
+                logging.debug(f"({str(time.time())}) {self.name} missing heartbeat → election request to {peer}")
                 totalPeersOnline += 1
             except:
                 pass
 
-        self.epoch += 1
-        logging.info(f"({str(time.time())}) {self.name} votes: {votes}/{totalPeersOnline}")
+        logging.debug(f"({str(time.time())}) {self.name} votes: {votes}/{totalPeersOnline}")
         if votes >= totalPeersOnline // 2 + 1:
-            self.declare_winner(self.epoch)
+            self.declare_winner(self.epoch + 1)
 
     def _send_heartbeat(self):
         while self.is_tracker:
@@ -196,7 +190,7 @@ def start(name, host, port, peer_names, ns_host="localhost", ns_port=9090):
     try:
         peer._get_tracker_proxy().update_files(name, peer.files)
     except:
-        # logging.info("no tracker → election")
+        # logging.debug("no tracker → election")
         # threading.Thread(target=peer.start_election, daemon=True).start()
         pass
     return daemon, uri
